@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>StickerPack Studio</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700&display=swap');
+        body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: #0f172a; color: #f8fafc; }
+        .glass { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.1); }
+        
+        /* Custom sleek scrollbars */
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: rgba(15, 23, 42, 0.3); border-radius: 8px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #475569; border-radius: 8px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #64748b; }
+
+        /* Drag active state */
+        .drag-active { border-color: #22c55e !important; background-color: rgba(34, 197, 94, 0.1) !important; }
+    </style>
+</head>
+<body class="min-h-screen p-4 md:p-8 relative overflow-x-hidden">
+
+    <div id="toastContainer" class="fixed top-4 right-4 z-50 flex flex-col gap-2 pointer-events-none"></div>
+
+    <div class="max-w-6xl mx-auto">
+        <header class="mb-10 text-center">
+            <h1 class="text-4xl font-bold text-green-400 mb-2">StickerPack Studio</h1>
+            <p class="text-slate-400">Create the ultimate WhatsApp sticker pack seamlessly.</p>
+        </header>
+
+        <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
+            <div class="space-y-6 lg:col-span-1">
+                <div class="glass p-6 rounded-3xl shadow-xl flex flex-col gap-6">
+                    <div>
+                        <h2 class="text-xl font-semibold mb-4 flex items-center">
+                            <span class="mr-2">⚙️</span> Settings
+                        </h2>
+                        <div class="space-y-4">
+                            <div>
+                                <label class="block text-sm text-slate-400 mb-1">Pack Name</label>
+                                <input type="text" id="packName" value="My Awesome Pack" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-2 focus:outline-none focus:border-green-500 transition-colors">
+                            </div>
+                            <div>
+                                <label class="block text-sm text-slate-400 mb-1">Author</label>
+                                <input type="text" id="author" value="Zaix1" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-2 focus:outline-none focus:border-green-500 transition-colors">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="dropZoneContainer" class="glass p-6 rounded-3xl shadow-xl border-2 border-dashed border-slate-700 hover:border-green-500 transition-all relative">
+                    <input type="file" id="fileInput" multiple accept="image/*,.gif" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10">
+                    <div class="text-center py-6 pointer-events-none" id="dropZone">
+                        <div class="text-4xl mb-2">📁</div>
+                        <p class="text-base font-medium">Local Files</p>
+                        <p class="text-xs text-slate-500">Click or Drag images/GIFs</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="lg:col-span-3">
+                <div class="glass p-5 sm:p-6 rounded-3xl shadow-xl border border-slate-700 h-[600px] flex flex-col">
+                    <div class="flex justify-between items-end mb-4">
+                        <div>
+                            <h3 class="text-xl font-medium flex items-center">
+                                <span class="mr-2">🔍</span> Search Giphy
+                            </h3>
+                            <p class="text-sm text-slate-500">Find the perfect animated stickers</p>
+                        </div>
+                    </div>
+                    
+                    <div class="flex gap-2 mb-4">
+                        <input type="text" id="giphySearchInput" placeholder="Search for 'Iron Man' or 'Jarvis'..." class="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 focus:outline-none focus:border-indigo-500 transition-colors">
+                        <button id="giphySearchBtn" class="bg-indigo-500 hover:bg-indigo-600 text-white font-semibold py-3 px-6 rounded-xl transition-colors shadow-lg shadow-indigo-500/20 active:scale-95">
+                            Search
+                        </button>
+                    </div>
+
+                    <div class="flex-1 bg-slate-900/50 rounded-2xl border border-slate-800 overflow-hidden flex flex-col relative p-2 sm:p-4">
+                        <div id="giphyResults" class="flex-1 overflow-y-auto custom-scrollbar pr-2 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 auto-rows-max content-start">
+                            <div class="col-span-full flex flex-col items-center justify-center text-slate-500 py-20">
+                                <span class="text-4xl mb-3">✨</span>
+                                <p class="font-medium text-lg">Enter a search term above</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="previewContainer" class="mt-10 hidden">
+            <div class="flex flex-col sm:flex-row justify-between items-center mb-6 gap-4">
+                <h2 class="text-2xl font-semibold">Sticker Preview (<span id="count" class="text-green-400">0</span>/30)</h2>
+                <div class="flex gap-3">
+                    <button id="clearBtn" class="bg-slate-700 hover:bg-slate-600 text-white font-medium py-2 px-6 rounded-full transition-colors">
+                        Clear All
+                    </button>
+                    <button id="downloadBtn" class="bg-green-500 hover:bg-green-600 text-slate-900 font-bold py-2 px-6 rounded-full transition-transform active:scale-95 shadow-lg shadow-green-500/20">
+                        Build Pack (.wastickers)
+                    </button>
+                </div>
+            </div>
+            <div id="grid" class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-3 bg-slate-900/50 p-6 rounded-3xl border border-slate-800 min-h-[150px]">
+            </div>
+        </div>
+    </div>
+
+    <canvas id="procCanvas" width="512" height="512" style="display:none;"></canvas>
+    <canvas id="trayCanvas" width="96" height="96" style="display:none;"></canvas>
+
+    <script>
+        const fileInput = document.getElementById('fileInput');
+        const dropZoneContainer = document.getElementById('dropZoneContainer');
+        const grid = document.getElementById('grid');
+        const previewContainer = document.getElementById('previewContainer');
+        const countSpan = document.getElementById('count');
+        const downloadBtn = document.getElementById('downloadBtn');
+        const clearBtn = document.getElementById('clearBtn');
+        const canvas = document.getElementById('procCanvas');
+        const ctx = canvas.getContext('2d');
+        const trayCanvas = document.getElementById('trayCanvas');
+        const trayCtx = trayCanvas.getContext('2d');
+        
+        // Giphy Elements
+        const giphySearchInput = document.getElementById('giphySearchInput');
+        const giphySearchBtn = document.getElementById('giphySearchBtn');
+        const giphyResults = document.getElementById('giphyResults');
+        const toastContainer = document.getElementById('toastContainer');
+
+        let stickerFiles = [];
+        
+        // Pagination state variables
+        let currentGiphyOffset = 0;
+        let currentGiphyQuery = '';
+
+        // --- Toast Notification System ---
+        function showToast(message, type = 'success') {
+            const toast = document.createElement('div');
+            const bgColor = type === 'error' ? 'bg-red-500' : type === 'warning' ? 'bg-yellow-500' : 'bg-green-500';
+            const textColor = type === 'warning' ? 'text-slate-900' : 'text-white';
+            
+            toast.className = `${bgColor} ${textColor} px-4 py-3 rounded-xl shadow-lg font-medium transform transition-all duration-300 translate-x-full opacity-0 flex items-center gap-2 pointer-events-auto`;
+            toast.innerHTML = `<span>${message}</span>`;
+            
+            toastContainer.appendChild(toast);
+            setTimeout(() => toast.classList.remove('translate-x-full', 'opacity-0'), 10);
+            setTimeout(() => {
+                toast.classList.add('translate-x-full', 'opacity-0');
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+
+        // --- Core UI Renderer for Stickers ---
+        function addStickerToGrid(dataUrl, baseFileName, sizeKB) {
+            if (stickerFiles.length >= 30) {
+                showToast("Maximum limit of 30 stickers reached!", "warning");
+                return false;
+            }
+
+            const uniqueId = Date.now().toString() + Math.random().toString(36).substr(2, 5);
+            const safeName = baseFileName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+            const fileName = `${safeName}_${uniqueId}.webp`;
+            
+            stickerFiles.push({ id: uniqueId, name: fileName, data: dataUrl });
+
+            const div = document.createElement('div');
+            div.id = `sticker-${uniqueId}`;
+            div.className = "group aspect-square bg-slate-800 rounded-2xl overflow-hidden border border-slate-700 shadow-inner flex items-center justify-center p-2 relative";
+            
+            // Dynamic Size Badge Color (Red if > 500KB)
+            const sizeColorClass = parseFloat(sizeKB) > 500 ? 'bg-red-500 text-white shadow-red-500/50' : 'bg-slate-900/80 text-green-400';
+
+            div.innerHTML = `
+                <div class="absolute top-2 left-2 z-20 px-2 py-0.5 rounded-md text-[10px] font-bold shadow-md ${sizeColorClass} backdrop-blur-md transition-opacity duration-300 group-hover:opacity-0 pointer-events-none">
+                    ${sizeKB} KB
+                </div>
+                <img src="${dataUrl}" class="max-w-full max-h-full object-contain drop-shadow-md relative z-10">
+                <button onclick="deleteSticker('${uniqueId}')" class="absolute top-2 right-2 z-30 bg-red-500/90 hover:bg-red-500 text-white w-7 h-7 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity backdrop-blur-md text-sm shadow-lg transform active:scale-90">
+                    ✕
+                </button>
+            `;
+            
+            grid.appendChild(div);
+            previewContainer.classList.remove('hidden');
+            updateCount();
+            return true;
+        }
+
+        // --- Core Processing Function (Forces EVERYTHING to 512x512) ---
+        async function processFiles(files) {
+            for (const file of files) {
+                if (stickerFiles.length >= 30) break;
+
+                try {
+                    const bitmap = await createImageBitmap(file);
+                    
+                    ctx.clearRect(0, 0, 512, 512);
+                    // This logic mathematically pads the image into a perfect 512x512 square
+                    let scale = Math.min(512 / bitmap.width, 512 / bitmap.height);
+                    let x = (512 - bitmap.width * scale) / 2;
+                    let y = (512 - bitmap.height * scale) / 2;
+                    
+                    ctx.drawImage(bitmap, x, y, bitmap.width * scale, bitmap.height * scale);
+                    const dataUrl = canvas.toDataURL('image/webp', 0.8);
+                    
+                    const sizeKB = (((dataUrl.length * 3) / 4) / 1024).toFixed(1);
+                    addStickerToGrid(dataUrl, file.name.split('.')[0], sizeKB);
+
+                } catch (err) {
+                    console.error(`Failed to process ${file.name}:`, err);
+                    showToast(`Failed to load ${file.name}`, "error");
+                }
+            }
+        }
+
+        // --- Individual Deletion ---
+        window.deleteSticker = function(id) {
+            stickerFiles = stickerFiles.filter(s => s.id !== id);
+            const el = document.getElementById(`sticker-${id}`);
+            if (el) el.remove();
+            updateCount();
+            if (stickerFiles.length === 0) previewContainer.classList.add('hidden');
+        };
+
+        function updateCount() {
+            countSpan.innerText = stickerFiles.length;
+        }
+
+        // --- Local File Listeners ---
+        fileInput.addEventListener('change', async (e) => {
+            if (e.target.files.length > 0) {
+                await processFiles(Array.from(e.target.files));
+                fileInput.value = ''; 
+            }
+        });
+
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(evt => dropZoneContainer.addEventListener(evt, e => { e.preventDefault(); e.stopPropagation(); }, false));
+        ['dragenter', 'dragover'].forEach(evt => dropZoneContainer.addEventListener(evt, () => dropZoneContainer.classList.add('drag-active'), false));
+        ['dragleave', 'drop'].forEach(evt => dropZoneContainer.addEventListener(evt, () => dropZoneContainer.classList.remove('drag-active'), false));
+
+        dropZoneContainer.addEventListener('drop', async (e) => {
+            const files = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('image/'));
+            if (files.length > 0) await processFiles(files);
+            else showToast("Please drop valid image files.", "error");
+        });
+
+        // --- Giphy Search & Fetch Logic with Pagination & Play-on-Hover ---
+        async function searchGiphy(isLoadMore = false) {
+            // Hardcoded Invincible API Key
+            const apiKey = "bYOBv5IdAu83tWscOwQQXCXhvVcpuYdt";
+            const query = isLoadMore ? currentGiphyQuery : giphySearchInput.value.trim();
+
+            if (!query) return;
+
+            if (!isLoadMore) {
+                currentGiphyQuery = query;
+                currentGiphyOffset = 0;
+                
+                giphyResults.innerHTML = `
+                    <div class="col-span-full flex flex-col items-center justify-center text-indigo-400 py-20">
+                        <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-500 mb-4"></div>
+                        <p class="font-medium">Searching Giphy...</p>
+                    </div>
+                `;
+            } else {
+                const loadBtn = document.getElementById('loadMoreBtn');
+                if (loadBtn) {
+                    loadBtn.innerHTML = `<div class="animate-spin rounded-full h-5 w-5 border-b-2 border-slate-400"></div> Loading...`;
+                    loadBtn.disabled = true;
+                }
+            }
+
+            try {
+                const response = await fetch(`https://api.giphy.com/v1/gifs/search?api_key=${apiKey}&q=${encodeURIComponent(query)}&limit=24&offset=${currentGiphyOffset}&rating=g`);
+                const data = await response.json();
+
+                if (!isLoadMore && data.data.length === 0) {
+                    giphyResults.innerHTML = `
+                        <div class="col-span-full flex flex-col items-center justify-center text-slate-500 py-20">
+                            <span class="text-3xl mb-2">🤷‍♂️</span>
+                            <p>No GIFs found for "${query}"</p>
+                        </div>
+                    `;
+                    return;
+                }
+
+                if (!isLoadMore) {
+                    giphyResults.innerHTML = ''; 
+                } else {
+                    const existingLoadMoreContainer = document.getElementById('loadMoreContainer');
+                    if (existingLoadMoreContainer) existingLoadMoreContainer.remove();
+                }
+
+                data.data.forEach(gif => {
+                    const stillUrl = gif.images.fixed_height_small_still.url; 
+                    const animatedUrl = gif.images.fixed_height_small.url;
+                    
+                    // We grab the original URL so processFiles can safely draw the first frame to the 512x512 canvas
+                    const originalUrl = gif.images.original.url;
+                    
+                    const div = document.createElement('div');
+                    div.className = "relative w-full group cursor-pointer aspect-square bg-slate-800 rounded-2xl overflow-hidden border border-slate-700 shadow-sm hover:border-indigo-400 hover:shadow-lg hover:shadow-indigo-500/20 transition-all duration-300";
+                    
+                    div.innerHTML = `
+                        <img src="${stillUrl}" data-still="${stillUrl}" data-animated="${animatedUrl}" class="w-full h-full object-cover pointer-events-none transition-transform duration-300 group-hover:scale-110">
+                        <div class="absolute inset-0 bg-gradient-to-t from-slate-900/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"></div>
+                        <div class="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none backdrop-blur-[2px]">
+                            <div class="bg-indigo-500 text-white rounded-full p-2.5 shadow-xl transform translate-y-4 group-hover:translate-y-0 transition-transform duration-300">
+                                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"></path></svg>
+                            </div>
+                        </div>
+                    `;
+                    
+                    div.addEventListener('mouseenter', function() {
+                        const img = this.querySelector('img');
+                        img.src = img.dataset.animated;
+                    });
+                    div.addEventListener('mouseleave', function() {
+                        const img = this.querySelector('img');
+                        img.src = img.dataset.still;
+                    });
+
+                    // Pass the original URL to the downloader
+                    div.addEventListener('click', () => downloadAndAddGiphyWebp(originalUrl, gif.id, div));
+                    giphyResults.appendChild(div);
+                });
+
+                currentGiphyOffset += 24;
+
+                if (data.pagination.total_count > currentGiphyOffset) {
+                    const loadMoreContainer = document.createElement('div');
+                    loadMoreContainer.id = "loadMoreContainer";
+                    loadMoreContainer.className = "col-span-full flex justify-center py-6";
+                    loadMoreContainer.innerHTML = `
+                        <button id="loadMoreBtn" class="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 hover:text-white font-medium py-3 px-8 rounded-full transition-all shadow-lg active:scale-95 flex items-center gap-2">
+                            Load More
+                        </button>
+                    `;
+                    giphyResults.appendChild(loadMoreContainer);
+                    
+                    document.getElementById('loadMoreBtn').addEventListener('click', () => searchGiphy(true));
+                }
+
+            } catch (err) {
+                console.error(err);
+                showToast("Failed to fetch. Is your API Key correct?", "error");
+                
+                if (!isLoadMore) {
+                    giphyResults.innerHTML = `
+                        <div class="col-span-full flex flex-col items-center justify-center text-red-400 py-20">
+                            <span class="text-3xl mb-2">⚠️</span>
+                            <p>Connection Error</p>
+                        </div>
+                    `;
+                } else {
+                    const loadBtn = document.getElementById('loadMoreBtn');
+                    if(loadBtn) {
+                        loadBtn.innerHTML = "Try Again";
+                        loadBtn.disabled = false;
+                    }
+                }
+            }
+        }
+
+        // --- Modified: Forces Giphy through the 512x512 Canvas to satisfy WhatsApp rules ---
+        async function downloadAndAddGiphyWebp(gifUrl, gifId, element) {
+            if (stickerFiles.length >= 30) {
+                showToast("Pack is full (30/30)!", "warning");
+                return;
+            }
+
+            const originalHTML = element.innerHTML;
+            
+            element.innerHTML = `
+                <div class="absolute inset-0 bg-slate-900 flex flex-col items-center justify-center text-indigo-400">
+                    <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-500 mb-2"></div>
+                    <span class="text-xs font-medium">Adding...</span>
+                </div>
+            `;
+            element.style.pointerEvents = 'none';
+
+            try {
+                const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(gifUrl)}`;
+                const response = await fetch(proxyUrl);
+                if (!response.ok) throw new Error("Download Failed");
+                
+                const blob = await response.blob();
+                const file = new File([blob], `giphy_${gifId}.gif`, { type: 'image/gif' });
+                
+                // Pumping it through processFiles GUARANTEES it becomes exactly 512x512 WebP
+                await processFiles([file]);
+                showToast("Sticker added!", "success");
+
+                // Success State overlay
+                element.innerHTML = `
+                    <img src="${gifUrl}" class="w-full h-full object-cover opacity-30">
+                    <div class="absolute inset-0 flex items-center justify-center bg-green-900/40">
+                        <div class="bg-green-500 text-white rounded-full p-2.5 shadow-lg shadow-green-500/50">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"></path></svg>
+                        </div>
+                    </div>
+                `;
+
+            } catch (err) {
+                console.error(err);
+                showToast("Download failed.", "error");
+                element.innerHTML = originalHTML; // Restore on fail
+                element.style.pointerEvents = 'auto';
+            }
+        }
+
+        giphySearchBtn.addEventListener('click', () => searchGiphy(false));
+        giphySearchInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') searchGiphy(false); });
+
+        // --- Build Pack ---
+        clearBtn.addEventListener('click', () => {
+            stickerFiles = [];
+            grid.innerHTML = '';
+            updateCount();
+            previewContainer.classList.add('hidden');
+        });
+
+        downloadBtn.addEventListener('click', async () => {
+            if (stickerFiles.length === 0) return;
+
+            const zip = new JSZip();
+            const packName = document.getElementById('packName').value || "MyPack";
+            
+            // THE FIX: Sequential naming 1.webp, 2.webp...
+            stickerFiles.forEach((file, index) => {
+                const base64Data = file.data.split(',')[1];
+                zip.file(`${index + 1}.webp`, base64Data, {base64: true});
+            });
+
+            const firstStickerImg = new Image();
+            firstStickerImg.src = stickerFiles[0].data;
+            await new Promise(r => firstStickerImg.onload = r);
+            
+            trayCtx.clearRect(0, 0, 96, 96);
+            trayCtx.drawImage(firstStickerImg, 0, 0, 96, 96);
+            const trayDataUrl = trayCanvas.toDataURL('image/png');
+            zip.file("tray.png", trayDataUrl.split(',')[1], {base64: true});
+
+            zip.file("title.txt", packName);
+            zip.file("author.txt", document.getElementById('author').value || "StickerPack Studio");
+
+            downloadBtn.innerText = "Building...";
+            try {
+                const content = await zip.generateAsync({
+                    type: "blob", 
+                    mimeType: "application/octet-stream",
+                    compression: "STORE"
+                });
+                
+                const finalFile = new File([content], `${packName.replace(/\s+/g, '_')}.wastickers`, { type: "application/octet-stream" });
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(finalFile);
+                link.download = finalFile.name;
+                link.click();
+                
+                showToast("Sticker Pack Built Successfully!", "success");
+            } catch (err) {
+                showToast("Failed to build .wastickers file.", "error");
+                console.error(err);
+            }
+            
+            downloadBtn.innerText = "Build Pack (.wastickers)";
+        });
+    </script>
+</body>
+</html>
