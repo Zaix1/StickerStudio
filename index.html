@@ -191,6 +191,8 @@
 
         // --- Core Processing Function (Forces EVERYTHING to 512x512) ---
         async function processFiles(files) {
+            let allSuccess = true; // Track if we hit errors
+            
             for (const file of files) {
                 if (stickerFiles.length >= 30) break;
 
@@ -212,8 +214,11 @@
                 } catch (err) {
                     console.error(`Failed to process ${file.name}:`, err);
                     showToast(`Failed to load ${file.name}`, "error");
+                    allSuccess = false; // Mark as failed so the parent function knows
                 }
             }
+            
+            return allSuccess;
         }
 
         // --- Individual Deletion ---
@@ -298,8 +303,7 @@
                     const stillUrl = gif.images.fixed_height_small_still.url; 
                     const animatedUrl = gif.images.fixed_height_small.url;
                     
-                    // We grab the original URL so processFiles can safely draw the first frame to the 512x512 canvas
-                    const originalUrl = gif.images.original.url;
+                    const downloadUrl = (gif.images.downsized && gif.images.downsized.url) ? gif.images.downsized.url : gif.images.original.url;
                     
                     const div = document.createElement('div');
                     div.className = "relative w-full group cursor-pointer aspect-square bg-slate-800 rounded-2xl overflow-hidden border border-slate-700 shadow-sm hover:border-indigo-400 hover:shadow-lg hover:shadow-indigo-500/20 transition-all duration-300";
@@ -323,8 +327,7 @@
                         img.src = img.dataset.still;
                     });
 
-                    // Pass the original URL to the downloader
-                    div.addEventListener('click', () => downloadAndAddGiphyWebp(originalUrl, gif.id, div));
+                    div.addEventListener('click', () => downloadAndAddGiphyWebp(downloadUrl, gif.id, div));
                     giphyResults.appendChild(div);
                 });
 
@@ -365,7 +368,7 @@
             }
         }
 
-        // --- Modified: Forces Giphy through the 512x512 Canvas to satisfy WhatsApp rules ---
+        // --- Fixed: Avoid proxy unless absolutely needed and check processing status ---
         async function downloadAndAddGiphyWebp(gifUrl, gifId, element) {
             if (stickerFiles.length >= 30) {
                 showToast("Pack is full (30/30)!", "warning");
@@ -383,15 +386,38 @@
             element.style.pointerEvents = 'none';
 
             try {
-                const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(gifUrl)}`;
-                const response = await fetch(proxyUrl);
-                if (!response.ok) throw new Error("Download Failed");
+                let response;
+                try {
+                    // Attempt 1: Fetch Directly (Giphy allows this and it prevents corruption)
+                    response = await fetch(gifUrl);
+                    if (!response.ok) throw new Error("Direct fetch failed");
+                } catch (e) {
+                    // Attempt 2: Fallback to a much better image-specific proxy
+                    console.warn("Direct fetch blocked, trying proxy...");
+                    const proxyUrl = `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(gifUrl)}`;
+                    response = await fetch(proxyUrl);
+                    if (!response.ok) throw new Error("Proxy fetch failed");
+                }
                 
                 const blob = await response.blob();
-                const file = new File([blob], `giphy_${gifId}.gif`, { type: 'image/gif' });
                 
-                // Pumping it through processFiles GUARANTEES it becomes exactly 512x512 WebP
-                await processFiles([file]);
+                // If the proxy gives us an HTML error page instead of an image, kill it here
+                if (!blob.type.startsWith('image/')) {
+                    throw new Error("Invalid file type received: " + blob.type);
+                }
+
+                const file = new File([blob], `giphy_${gifId}.gif`, { type: blob.type || 'image/gif' });
+                
+                // Pumping it through processFiles and checking if it actually worked
+                const processSuccess = await processFiles([file]);
+                
+                // If processFiles crashed, stop right here so we don't show the green toast
+                if (!processSuccess) {
+                    element.innerHTML = originalHTML; 
+                    element.style.pointerEvents = 'auto';
+                    return; 
+                }
+
                 showToast("Sticker added!", "success");
 
                 // Success State overlay
@@ -406,8 +432,9 @@
 
             } catch (err) {
                 console.error(err);
+                // We only show this if the fetch failed completely, otherwise processFiles handles the toast
                 showToast("Download failed.", "error");
-                element.innerHTML = originalHTML; // Restore on fail
+                element.innerHTML = originalHTML; 
                 element.style.pointerEvents = 'auto';
             }
         }
@@ -429,7 +456,6 @@
             const zip = new JSZip();
             const packName = document.getElementById('packName').value || "MyPack";
             
-            // THE FIX: Sequential naming 1.webp, 2.webp...
             stickerFiles.forEach((file, index) => {
                 const base64Data = file.data.split(',')[1];
                 zip.file(`${index + 1}.webp`, base64Data, {base64: true});
